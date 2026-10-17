@@ -15,6 +15,8 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { EmptyState, ErrorState, LoadingState } from './states';
 import { useFocusTrap } from './use-focus-trap';
 import { Icon } from './icon';
+import { FavoriteButton } from './favorite-button';
+import { toFavoriteSubject } from './video-card';
 
 /**
  * 详情弹窗：剧集列表 + 排序 + 复制链接。
@@ -145,15 +147,18 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
             <h2 className="text-lg font-semibold text-content break-words">{item.name}</h2>
             <span className="text-sm text-faint">{item.sourceName}</span>
           </div>
-          <button
-            className="p-1.5 rounded-md text-muted hover:text-content hover:bg-hover shrink-0"
-            onClick={onClose}
-            aria-label="关闭"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <FavoriteButton subject={toFavoriteSubject(item)} showLabel />
+            <button
+              className="p-1.5 rounded-md text-muted hover:text-content hover:bg-hover shrink-0"
+              onClick={onClose}
+              aria-label="关闭"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="p-5 pt-4">

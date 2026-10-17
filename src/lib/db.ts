@@ -55,6 +55,31 @@ export interface SegmentMetaEntry {
 
 export type DownloadStatus = 'waiting' | 'downloading' | 'paused' | 'completed' | 'error';
 
+export interface FavoriteEntry {
+  /** 主键：`fav_${sourceKey}_${vodId}` */
+  id: string;
+  sourceKey: string;
+  sourceUrl?: string;
+  sourceName?: string;
+  vodId: string;
+  title: string;
+  pic?: string;
+  typeName?: string;
+  year?: string;
+  remarks?: string;
+  /** 所属收藏目录 id（文件夹） */
+  folderId: string;
+  addedAt: number;
+}
+
+export interface FavoriteFolderEntry {
+  id: string;
+  name: string;
+  createdAt: number;
+  /** 排序：越小越靠前 */
+  sortOrder: number;
+}
+
 export interface DownloadTaskEntry {
   id: string;
   /** 播放页 m3u8 地址（直连或代理形式，入队时的原样） */
@@ -77,6 +102,8 @@ export const db = new Dexie('libretv') as Dexie & {
   liveProbe: EntityTable<LiveProbeEntry & { url: string }, 'url'>;
   segmentMeta: EntityTable<SegmentMetaEntry, 'key'>;
   downloads: EntityTable<DownloadTaskEntry, 'id'>;
+  favorites: EntityTable<FavoriteEntry, 'id'>;
+  favoriteFolders: EntityTable<FavoriteFolderEntry, 'id'>;
 };
 
 db.version(1).stores({
@@ -94,6 +121,12 @@ db.version(2).stores({
 db.version(3).stores({
   segmentMeta: 'key, episodeKey, lastAccess',
   downloads: 'id, createdAt',
+});
+
+// v4：收藏夹（影片收藏 + 自定义目录）
+db.version(4).stores({
+  favorites: 'id, folderId, addedAt',
+  favoriteFolders: 'id, sortOrder',
 });
 
 export const MAX_HISTORY = 100;
@@ -147,6 +180,97 @@ export async function clearAllHistory(): Promise<void> {
 
 export function progressKeyOf(sourceKey: string, vodId: string, episodeIndex: number): string {
   return `${sourceKey}_${vodId}_${episodeIndex}`;
+}
+
+// —— 收藏夹 ——
+
+export const DEFAULT_FAVORITE_FOLDERS = ['未分类', '动漫', '电影', '电视剧', '悬疑'] as const;
+export const UNCATEGORIZED_FOLDER_ID = 'fd_uncategorized';
+
+/** 首次使用时预置几个常用目录（用户可改名/删除） */
+export async function ensureFavoriteFolders(): Promise<void> {
+  if ((await db.favoriteFolders.count()) > 0) return;
+  const now = Date.now();
+  await db.favoriteFolders.bulkPut(
+    DEFAULT_FAVORITE_FOLDERS.map((name, i) => ({
+      id: i === 0 ? UNCATEGORIZED_FOLDER_ID : `fd_default_${i}`,
+      name,
+      createdAt: now + i,
+      sortOrder: i,
+    }))
+  );
+}
+
+export async function listFavoriteFolders(): Promise<FavoriteFolderEntry[]> {
+  await ensureFavoriteFolders();
+  return db.favoriteFolders.orderBy('sortOrder').toArray();
+}
+
+export async function addFavoriteFolder(name: string): Promise<FavoriteFolderEntry> {
+  const n = name.trim().slice(0, 20);
+  if (!n) throw new Error('目录名不能为空');
+  // 目录数量很少，直接全量比对，避免为 name 建索引
+  const exists = (await db.favoriteFolders.toArray()).find((f) => f.name === n);
+  if (exists) return exists;
+  const count = await db.favoriteFolders.count();
+  const entry: FavoriteFolderEntry = {
+    id: `fd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: n,
+    createdAt: Date.now(),
+    sortOrder: count,
+  };
+  await db.favoriteFolders.put(entry);
+  return entry;
+}
+
+export async function renameFavoriteFolder(id: string, name: string): Promise<void> {
+  const n = name.trim().slice(0, 20);
+  if (!n) throw new Error('目录名不能为空');
+  await db.favoriteFolders.update(id, { name: n });
+}
+
+/** 删除目录：目录内的收藏移入「未分类」，不丢数据 */
+export async function deleteFavoriteFolder(id: string): Promise<void> {
+  if (id === UNCATEGORIZED_FOLDER_ID) return;
+  await db.favorites.where('folderId').equals(id).modify({ folderId: UNCATEGORIZED_FOLDER_ID });
+  await db.favoriteFolders.delete(id);
+}
+
+export function favoriteIdOf(sourceKey: string, vodId: string): string {
+  return `fav_${sourceKey}_${vodId}`;
+}
+
+export async function getFavorite(sourceKey: string, vodId: string): Promise<FavoriteEntry | undefined> {
+  return db.favorites.get(favoriteIdOf(sourceKey, vodId));
+}
+
+export async function addFavorite(item: Omit<FavoriteEntry, 'id' | 'addedAt'>): Promise<void> {
+  await db.favorites.put({
+    ...item,
+    id: favoriteIdOf(item.sourceKey, item.vodId),
+    addedAt: Date.now(),
+  });
+}
+
+export async function removeFavorite(sourceKey: string, vodId: string): Promise<void> {
+  await db.favorites.delete(favoriteIdOf(sourceKey, vodId));
+}
+
+export async function moveFavorite(sourceKey: string, vodId: string, folderId: string): Promise<void> {
+  await db.favorites.update(favoriteIdOf(sourceKey, vodId), { folderId });
+}
+
+export async function listFavorites(folderId?: string): Promise<FavoriteEntry[]> {
+  const all = await db.favorites.toArray();
+  const filtered = folderId ? all.filter((f) => f.folderId === folderId) : all;
+  return filtered.sort((a, b) => b.addedAt - a.addedAt);
+}
+
+export async function favoriteCountByFolder(): Promise<Record<string, number>> {
+  const all = await db.favorites.toArray();
+  const out: Record<string, number> = {};
+  for (const f of all) out[f.folderId] = (out[f.folderId] ?? 0) + 1;
+  return out;
 }
 
 export async function saveProgress(sourceKey: string, vodId: string, episodeIndex: number, position: number, duration: number): Promise<void> {

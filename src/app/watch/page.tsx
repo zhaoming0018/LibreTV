@@ -19,6 +19,7 @@ import { EmptyState, LoadingState, Spinner } from '@/components/states';
 import { SwitchSourceModal } from '@/components/switch-source';
 import { enqueueDownload } from '@/components/download-manager';
 import { Icon } from '@/components/icon';
+import { FavoriteButton } from '@/components/favorite-button';
 import { useAuth } from '@/components/auth';
 import { resolveSource, useAppStore } from '@/lib/store';
 import { qualityKey } from '@/lib/quality';
@@ -209,6 +210,22 @@ function WatchContent() {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {vodId && (
+              <FavoriteButton
+                showLabel
+                subject={{
+                  sourceKey,
+                  sourceUrl: source?.url,
+                  sourceName: source?.name,
+                  vodId,
+                  title: videoTitle,
+                  pic: detailQuery.data?.videoInfo?.cover,
+                  typeName: detailQuery.data?.videoInfo?.typeName,
+                  year: detailQuery.data?.videoInfo?.year,
+                  remarks: detailQuery.data?.videoInfo?.remarks,
+                }}
+              />
+            )}
             <button
               className="btn-ghost btn-sm"
               onClick={() => {

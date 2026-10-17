@@ -8,6 +8,7 @@ import { QUALITY_FAIL_TTL_MS, qualityKey, qualityLabel } from '@/lib/quality';
 import { formatRemarks, inferGroupRemarks } from '@/lib/remarks';
 import { cn } from '@/lib/utils';
 import { SmartImage } from './smart-image';
+import { FavoriteButton, type FavoriteSubject } from './favorite-button';
 
 // —— 跨源同名聚合 ——
 
@@ -32,6 +33,21 @@ function buildGroup(name: string, year: string | undefined, items: SearchResultI
     // 否则同一部剧的来源列表会看起来状态各异
     remarks: inferGroupRemarks(items.map((i) => i.remarks)),
     items,
+  };
+}
+
+/** 搜索结果项 → 收藏主体（多源聚合卡以首个来源为代表） */
+export function toFavoriteSubject(item: SearchResultItem): FavoriteSubject {
+  return {
+    sourceKey: item.sourceKey,
+    sourceUrl: item.sourceUrl,
+    sourceName: item.sourceName,
+    vodId: item.vodId,
+    title: item.name,
+    pic: item.pic,
+    typeName: item.typeName,
+    year: item.year,
+    remarks: item.remarks,
   };
 }
 
@@ -299,6 +315,7 @@ export function AggregatedCard({
               onExhausted={() => setImgFailed(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent" />
+            <FavoriteButton subject={toFavoriteSubject(group.items[0])} size="sm" className="absolute top-1.5 right-1.5" />
             {multi && (
               <span className="absolute top-1.5 left-1.5 tag bg-black/70 text-accent font-medium">
                 {group.items.length} 源
@@ -453,6 +470,7 @@ export function VideoCard({ item, onClick }: { item: SearchResultItem; onClick: 
               onExhausted={() => setImgFailed(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent" />
+            <FavoriteButton subject={toFavoriteSubject(item)} size="sm" className="absolute top-1.5 right-1.5" />
           </div>
         ) : (
           <div className="flex-shrink-0 w-[105px] sm:w-[120px] aspect-[2/3] bg-chip flex items-center justify-center">

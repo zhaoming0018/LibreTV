@@ -97,6 +97,17 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
           <div className="flex-1 sm:hidden" />
 
           <nav className="flex items-center gap-1 ml-auto">
+            <Link
+              href="/favorites"
+              className={cn(
+                'p-2 rounded-md transition-colors',
+                pathname === '/favorites' ? 'text-amber-400 bg-hover' : 'text-muted hover:text-content hover:bg-hover'
+              )}
+              title="我的收藏"
+              aria-label="我的收藏"
+            >
+              <Icon name="starFilled" className="w-5 h-5" />
+            </Link>
             <HeaderLink href="/live" active={pathname === '/live'}>
               直播
             </HeaderLink>
