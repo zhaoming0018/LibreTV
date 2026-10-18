@@ -66,6 +66,20 @@ function dlChunkKey(taskId: string, index: number): string {
   return `${DL_CHUNK_ORIGIN}/${encodeURIComponent(taskId)}/${index}`;
 }
 
+/**
+ * Cache Storage 只在安全上下文（https / localhost）可用；公网 http://IP:端口
+ * 下 `caches` 是 undefined。此时退回内存分片表，下载照常，只是刷新后不能续传
+ * （刷新本来也保不住保存句柄）。
+ */
+async function openChunkCache(): Promise<Cache | null> {
+  if (typeof caches === 'undefined') return null;
+  try {
+    return await caches.open(DL_CACHE_NAME);
+  } catch {
+    return null;
+  }
+}
+
 export async function clearDownloadChunks(taskId: string): Promise<void> {
   try {
     if (typeof caches === 'undefined') return;
@@ -168,19 +182,31 @@ export async function runDownloadJob(opts: DownloadJobOptions): Promise<void> {
   // —— AES key 预取 ——
   let aesKey: ArrayBuffer | undefined;
   if (parsed.aesConf) {
+    if (!globalThis.crypto?.subtle) {
+      throw new Error('当前页面是 HTTP 访问，浏览器禁用了 WebCrypto，无法解密此源；请换普通源或改用 HTTPS');
+    }
     const res = await fetch(parsed.aesConf.uri, { signal });
     if (!res.ok) throw new Error(`解密密钥加载失败：HTTP ${res.status}`);
     aesKey = await res.arrayBuffer();
   }
 
   // —— 并发下载分片（Cache Storage 断点） ——
-  const cache = await caches.open(DL_CACHE_NAME);
+  const cache = await openChunkCache();
+  const memChunks = new Map<number, ArrayBuffer>();
+  if (!cache) console.warn('[download] Cache Storage 不可用（非安全上下文），分片保存在内存中');
   const chunkKey = (index: number) => dlChunkKey(taskId, index);
+  const hasChunk = async (index: number): Promise<boolean> =>
+    cache ? !!(await cache.match(new Request(chunkKey(index)))) : memChunks.has(index);
+  const readChunk = async (index: number): Promise<ArrayBuffer | null> => {
+    if (!cache) return memChunks.get(index) ?? null;
+    const resp = await cache.match(new Request(chunkKey(index)));
+    return resp ? resp.arrayBuffer() : null;
+  };
   let cursor = 0;
   // 恢复：统计已有分片数作为起点
   let current = 0;
   for (let i = 1; i <= total; i++) {
-    if (await cache.match(new Request(chunkKey(i)))) current += 1;
+    if (await hasChunk(i)) current += 1;
   }
   report(current, total, 'downloading');
 
@@ -191,8 +217,7 @@ export async function runDownloadJob(opts: DownloadJobOptions): Promise<void> {
       const index = ++cursor; // 1 基
       if (signal.aborted) return;
       await pause.waitIfPaused();
-      const cached = await cache.match(new Request(chunkKey(index)));
-      if (cached) {
+      if (await hasChunk(index)) {
         // 已在恢复预统计里计入，不再累加——否则续传时进度重复计数超过 100%
         continue;
       }
@@ -211,10 +236,14 @@ export async function runDownloadJob(opts: DownloadJobOptions): Promise<void> {
       if (!buffer) {
         throw new Error(`分片 ${index} 下载失败（已重试 ${MAX_SEGMENT_RETRIES} 次）`);
       }
-      await cache.put(
-        new Request(chunkKey(index)),
-        new Response(buffer.slice(0), { headers: { 'Content-Type': 'video/mp2t' } })
-      );
+      if (cache) {
+        await cache.put(
+          new Request(chunkKey(index)),
+          new Response(buffer.slice(0), { headers: { 'Content-Type': 'video/mp2t' } })
+        );
+      } else {
+        memChunks.set(index, buffer);
+      }
       current += 1;
       report(current, total, 'downloading');
     }
@@ -231,9 +260,8 @@ export async function runDownloadJob(opts: DownloadJobOptions): Promise<void> {
     for (let i = 1; i <= total; i++) {
       if (signal.aborted) return;
       await pause.waitIfPaused();
-      const resp = await cache.match(new Request(chunkKey(i)));
-      if (!resp) throw new Error(`分片 ${i} 缓存丢失，请重试`);
-      let data = await resp.arrayBuffer();
+      let data = await readChunk(i);
+      if (!data) throw new Error(`分片 ${i} 缓存丢失，请重试`);
       if (aesKey && parsed.aesConf) {
         data = await decryptSegment(data, aesKey, parsed.aesConf.iv, parsed.mediaSequence, i - 1);
       }
@@ -244,9 +272,8 @@ export async function runDownloadJob(opts: DownloadJobOptions): Promise<void> {
     for (let i = 1; i <= total; i++) {
       if (signal.aborted) return;
       await pause.waitIfPaused();
-      const resp = await cache.match(new Request(chunkKey(i)));
-      if (!resp) throw new Error(`分片 ${i} 缓存丢失，请重试`);
-      let data = await resp.arrayBuffer();
+      let data = await readChunk(i);
+      if (!data) throw new Error(`分片 ${i} 缓存丢失，请重试`);
       if (aesKey && parsed.aesConf) {
         data = await decryptSegment(data, aesKey, parsed.aesConf.iv, parsed.mediaSequence, i - 1);
       }
