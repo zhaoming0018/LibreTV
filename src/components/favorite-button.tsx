@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   addFavorite,
   addFavoriteFolder,
@@ -40,12 +41,15 @@ export function FavoriteButton({
   className,
   size = 'md',
   showLabel = false,
+  onChanged,
 }: {
   subject: FavoriteSubject;
   className?: string;
   /** sm：卡片角标；md：详情页常规按钮 */
   size?: 'sm' | 'md';
   showLabel?: boolean;
+  /** 收藏状态变化后通知父级刷新列表 */
+  onChanged?: () => void;
 }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -53,7 +57,10 @@ export function FavoriteButton({
   const [folders, setFolders] = useState<FavoriteFolderEntry[]>([]);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
   const rootRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     const [f, fs] = await Promise.all([
@@ -72,18 +79,47 @@ export function FavoriteButton({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
+    const onDismiss = () => setOpen(false);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onDismiss, true);
+    window.addEventListener('resize', onDismiss);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onDismiss, true);
+      window.removeEventListener('resize', onDismiss);
     };
   }, [open]);
+
+  // 菜单用 fixed 定位并挂到 body：卡片有 overflow-hidden，内联菜单会被裁掉
+  const toggleMenu = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) {
+      setOpen(true);
+      return;
+    }
+    const width = 208;
+    const right = Math.max(8, window.innerWidth - r.right);
+    const spaceBelow = window.innerHeight - r.bottom;
+    setMenuStyle(
+      spaceBelow < 260
+        ? { position: 'fixed', right, bottom: window.innerHeight - r.top + 6, width, zIndex: 80, maxHeight: Math.min(360, r.top - 12) }
+        : { position: 'fixed', right, top: r.bottom + 6, width, zIndex: 80, maxHeight: Math.min(360, spaceBelow - 12) }
+    );
+    setOpen(true);
+  };
 
   const pick = async (folderId: string) => {
     if (busy) return;
@@ -98,6 +134,7 @@ export function FavoriteButton({
         toast(`已收藏到「${name}」`, 'success');
       }
       await refresh();
+      onChanged?.();
       setOpen(false);
     } catch (err) {
       toast(err instanceof Error ? err.message : '收藏失败', 'error');
@@ -127,6 +164,7 @@ export function FavoriteButton({
       await removeFavorite(subject.sourceKey, subject.vodId);
       toast('已取消收藏', 'success');
       await refresh();
+      onChanged?.();
       setOpen(false);
     } finally {
       setBusy(false);
@@ -141,6 +179,7 @@ export function FavoriteButton({
   return (
     <div ref={rootRef} className={cn('relative', className)}>
       <button
+        ref={btnRef}
         type="button"
         className={cn(btnCls, 'transition-colors', showLabel && 'flex items-center gap-1.5')}
         title={fav ? '已收藏（点击管理）' : '收藏'}
@@ -149,7 +188,7 @@ export function FavoriteButton({
         aria-expanded={open}
         onClick={(e) => {
           e.stopPropagation();
-          setOpen((v) => !v);
+          toggleMenu();
         }}
       >
         <Icon
@@ -159,13 +198,27 @@ export function FavoriteButton({
         {showLabel && <span className="hidden sm:inline">{fav ? '已收藏' : '收藏'}</span>}
       </button>
 
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1.5 z-[70] w-52 rounded-lg border border-line bg-surface-raised shadow-xl py-1.5 animate-fade-in"
-          role="menu"
-          onClick={(e) => e.stopPropagation()}
-        >
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="rounded-lg border border-line bg-surface-raised shadow-xl py-1.5 animate-fade-in overflow-y-auto scrollbar-thin"
+            style={menuStyle}
+            role="menu"
+            onClick={(e) => e.stopPropagation()}
+          >
           <p className="px-3 py-1 text-[11px] text-faint">{fav ? '移动到目录' : '收藏到目录'}</p>
+          {fav && (
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left text-red-500 hover:bg-hover transition-colors"
+              onClick={unfavorite}
+            >
+              <Icon name="trash" className="w-4 h-4 shrink-0" />
+              取消收藏
+            </button>
+          )}
           <div className="max-h-56 overflow-y-auto scrollbar-thin">
             {folders.map((f) => (
               <button
@@ -207,19 +260,9 @@ export function FavoriteButton({
               </button>
             </div>
           </div>
-          {fav && (
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left text-red-500 hover:bg-hover transition-colors border-t border-line mt-1"
-              onClick={unfavorite}
-            >
-              <Icon name="trash" className="w-4 h-4 shrink-0" />
-              取消收藏
-            </button>
-          )}
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </div>
   );
 }

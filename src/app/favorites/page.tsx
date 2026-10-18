@@ -216,9 +216,10 @@ export default function FavoritesPage() {
                       remarks: f.remarks,
                     }}
                     size="sm"
-                    className="absolute top-1.5 right-1.5"
+                    className="absolute top-1.5 right-1.5 z-10"
+                    onChanged={refresh}
                   />
-                  <span className="absolute top-1.5 left-1.5 tag bg-black/70 text-white/90">
+                  <span className="absolute top-1.5 left-1.5 max-w-[calc(100%-3.5rem)] truncate tag bg-black/70 text-white/90 pointer-events-none">
                     {folderName(f.folderId)}
                   </span>
                 </div>
