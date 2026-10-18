@@ -12,6 +12,7 @@ import {
 } from '@/lib/video-prefetcher';
 import { loadCacheSettings } from '@/lib/video-cache';
 import { formatTime } from '@/lib/utils';
+import { withBasePath } from '@/lib/base-path';
 
 /**
  * 播放器外壳：ArtPlayer + hls.js（旧版 player.js 的 React 化）。
@@ -252,11 +253,11 @@ export function PlayerShell({
           // （同源 cookie 鉴权，规避 CORS/防盗链/分片被拒）
           if (
             allowProxyFallback &&
-            !mediaUrl.startsWith('/api/proxy') &&
+            !mediaUrl.startsWith(withBasePath('/api/proxy')) &&
             (decision.attempt >= 2 || data.details === 'manifestLoadError')
           ) {
             showHint('直连失败，改用代理重试...');
-            setupHls(video, `/api/proxy?url=${encodeURIComponent(mediaUrl)}`, false);
+            setupHls(video, withBasePath(`/api/proxy?url=${encodeURIComponent(mediaUrl)}`), false);
             return;
           }
           showHint(`${decision.reason}（第 ${decision.attempt} 次）...`);

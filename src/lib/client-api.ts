@@ -1,5 +1,6 @@
 'use client';
 
+import { withBasePath } from './base-path';
 import type { SearchResponse, SearchStreamEvent, SourceSearchOutcome, VideoDetail, DoubanResponse, BangumiCalendarResponse, AuthStatusResponse, SourceConfig, SearchResultItem, LivePlaylistResponse, LiveEpgResponse, SourceListPayload, QualityProbeItem, QualityProbeResult } from './types';
 
 /**
@@ -88,7 +89,7 @@ async function consumeNdjson<T>(res: Response, onEvent: (event: T) => void): Pro
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(withBasePath(url), init);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError('网络请求失败，请检查网络连接', 0);
@@ -155,7 +156,7 @@ export const api = {
     onResult: (result: QualityProbeResult) => void,
     signal?: AbortSignal
   ): Promise<void> => {
-    const res = await fetch('/api/quality?stream=1', {
+    const res = await fetch(withBasePath('/api/quality?stream=1'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
@@ -248,7 +249,7 @@ export const api = {
   /** 订阅导出（.m3u）下载地址 */
   liveExportUrl: (url: string) => {
     const sp = new URLSearchParams({ url, format: 'm3u' });
-    return `/api/live/playlist?${sp.toString()}`;
+    return withBasePath(`/api/live/playlist?${sp.toString()}`);
   },
 
   /** 批量测活：分片级探测频道可达性与延迟（单批最多 50 条） */
@@ -272,7 +273,7 @@ export const api = {
     onResult: (result: LiveProbeResult) => void,
     signal?: AbortSignal
   ): Promise<void> => {
-    const res = await fetch('/api/live/probe?stream=1', {
+    const res = await fetch(withBasePath('/api/live/probe?stream=1'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls }),
@@ -299,7 +300,7 @@ async function searchStream(
   onSource: (outcome: SourceSearchOutcome) => void,
   signal?: AbortSignal
 ): Promise<SearchResponse> {
-  const res = await fetch('/api/search?stream=1', {
+  const res = await fetch(withBasePath('/api/search?stream=1'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wd, sources, filterAdult }),

@@ -6,14 +6,16 @@
  * 从根本上修复旧版「重写分片丢失鉴权参数导致 401」的问题。
  */
 
+import { withBasePath } from './base-path';
+
 /** 点播代理地址（查询串形式，路径形式会被 EdgeOne 等网关的 URL 归一化破坏，见 proxy-handlers.ts） */
-export const PROXY_BASE = '/api/proxy?url=';
+export const PROXY_BASE = withBasePath('/api/proxy?url=');
 /** 直播流代理地址（查询串形式） */
-export const LIVE_STREAM_BASE = '/api/live/stream?url=';
+export const LIVE_STREAM_BASE = withBasePath('/api/live/stream?url=');
 
 /** URI 已是本站代理地址（新旧两种形式：/api/proxy/…、/api/proxy?url=…、/api/live/stream/…、/api/live/stream?url=…）时不再二次改写 */
 export function isProxiedUri(uri: string): boolean {
-  return uri.startsWith('/api/proxy') || uri.startsWith('/api/live/stream');
+  return uri.startsWith(withBasePath('/api/proxy')) || uri.startsWith(withBasePath('/api/live/stream'));
 }
 
 /**

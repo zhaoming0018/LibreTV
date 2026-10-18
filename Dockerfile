@@ -6,6 +6,9 @@ COPY package.json package-lock.json* ./
 RUN npm ci --no-audit --no-fund
 
 COPY . .
+# 子路径部署（如 /tv）；默认根路径
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 ENV DOCKER_BUILD=1
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build

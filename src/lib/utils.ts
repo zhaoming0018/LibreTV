@@ -1,3 +1,5 @@
+import { withBasePath } from './base-path';
+
 export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }
@@ -41,7 +43,7 @@ export function buildImageUrl(
   customTemplate: string
 ): string | undefined {
   if (!url) return undefined;
-  if (mode === 'proxy') return `/api/proxy?url=${encodeURIComponent(url)}`;
+  if (mode === 'proxy') return withBasePath(`/api/proxy?url=${encodeURIComponent(url)}`);
   if (mode === 'custom' && customTemplate) {
     return customTemplate.includes('{url}')
       ? customTemplate.replace('{url}', encodeURIComponent(url))
@@ -76,7 +78,7 @@ export function buildImageCandidates(
     return [...new Set([built, ...mirrors, url])];
   }
   if (mode !== 'direct') return [built];
-  return [...new Set([built, ...mirrors, `/api/proxy?url=${encodeURIComponent(url)}`])];
+  return [...new Set([built, ...mirrors, withBasePath(`/api/proxy?url=${encodeURIComponent(url)}`)])];
 }
 
 export function validateSourceUrl(url: string): boolean {

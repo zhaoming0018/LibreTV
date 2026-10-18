@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ThemeToggle } from './theme';
+import { withBasePath } from '@/lib/base-path';
 import { SourceManagerDrawer } from './source-manager';
 import { HistoryPanel } from './history-panel';
 import { requestShowDownloadManager } from './download-manager';
@@ -41,7 +42,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link href="/" aria-label="LibreTV 首页" className="flex items-center shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-512.png" alt="LibreTV" className="w-7 h-7 rounded-lg" />
+            <img src={withBasePath('/icons/icon-512.png')} alt="LibreTV" className="w-7 h-7 rounded-lg" />
           </Link>
 
           {showSearch && (
