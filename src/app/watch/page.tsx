@@ -357,6 +357,8 @@ function WatchContent() {
                 </button>
               )}
             </div>
+            {/* 超长剧集（几百集）时只给列表约 11 行高度，超出在卡片内滚动：
+                卡片不再随集数变长，右侧也就不会比播放器拖出一截 */}
             {episodes.length === 0 ? (
               detailQuery.isLoading ? (
                 <LoadingState />
@@ -364,7 +366,7 @@ function WatchContent() {
                 <EmptyState variant="plain" title={detailQuery.isError ? '获取剧集失败' : '暂无剧集信息'} />
               )
             ) : (
-              <div className="grid grid-cols-5 lg:grid-cols-4 gap-1.5 max-h-[65vh] overflow-y-auto scrollbar-thin pr-1">
+              <div className="grid grid-cols-5 lg:grid-cols-4 gap-1.5 max-h-[65vh] lg:max-h-[22rem] content-start overflow-y-auto scrollbar-thin pr-1">
                 {orderedEpisodes.map((realIndex) => (
                   <EpisodeButton
                     key={realIndex}
