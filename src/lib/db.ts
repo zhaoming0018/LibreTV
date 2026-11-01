@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { SourceConfig } from './types';
+import { normalizeTitle } from './cms-parser';
 // 仅类型引入：store.ts 运行时会引用本模块，反向只取类型不会形成运行时循环
 import type { LiveProbeEntry } from './store';
 import { PERSIST_KEY, flushPendingPersist } from './persist-storage';
@@ -178,8 +179,26 @@ export async function clearAllHistory(): Promise<void> {
   await Promise.all([db.history.clear(), db.progress.clear()]);
 }
 
-export function progressKeyOf(sourceKey: string, vodId: string, episodeIndex: number): string {
-  return `${sourceKey}_${vodId}_${episodeIndex}`;
+/** 进度达到该比例即视为「已看完」：重进不再续播，剧集列表标成已看 */
+export const PROGRESS_FINISHED = 0.95;
+
+/**
+ * 进度主键：按「片名 + 集号」记，不掺来源。
+ * 同一部剧换源后（vodId 不同）看过/看到哪儿的标记照旧复用；标题带「国语/粤语」等
+ * 后缀的会被当成不同的剧，这是刻意的——那种情况本来就可能是不同的版本。
+ */
+export function progressKeyOf(title: string, episodeIndex: number): string {
+  return `${normalizeTitle(title)}#${episodeIndex}`;
+}
+
+/** 读整部剧的进度：集号 → 进度条目（剧集列表标「已看 / 45%」用） */
+export async function listProgress(title: string): Promise<Record<number, ProgressEntry>> {
+  const prefix = `${normalizeTitle(title)}#`;
+  if (prefix === '#') return {};
+  const rows = await db.progress.where('key').startsWith(prefix).toArray();
+  const out: Record<number, ProgressEntry> = {};
+  for (const row of rows) out[Number(row.key.slice(prefix.length))] = row;
+  return out;
 }
 
 // —— 收藏夹 ——
@@ -273,18 +292,15 @@ export async function favoriteCountByFolder(): Promise<Record<string, number>> {
   return out;
 }
 
-export async function saveProgress(sourceKey: string, vodId: string, episodeIndex: number, position: number, duration: number): Promise<void> {
-  if (!duration || position < 1) return;
+export async function saveProgress(title: string, episodeIndex: number, position: number, duration: number): Promise<void> {
+  // 没有片名就没法跨源共享，也会写出 '#' 开头的脏主键
+  if (!title.trim() || !duration || position < 1) return;
   await db.progress.put({
-    key: progressKeyOf(sourceKey, vodId, episodeIndex),
+    key: progressKeyOf(title, episodeIndex),
     position,
     duration,
     updatedAt: Date.now(),
   });
-}
-
-export async function clearProgress(sourceKey: string, vodId: string, episodeIndex: number): Promise<void> {
-  await db.progress.delete(progressKeyOf(sourceKey, vodId, episodeIndex));
 }
 
 export async function addSearchHistory(text: string): Promise<void> {

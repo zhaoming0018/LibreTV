@@ -24,7 +24,8 @@ import { useAuth } from '@/components/auth';
 import { resolveSource, useAppStore } from '@/lib/store';
 import { qualityKey } from '@/lib/quality';
 import {
-  clearProgress,
+  PROGRESS_FINISHED,
+  listProgress,
   progressKeyOf,
   saveProgress,
   updateHistoryProgress,
@@ -113,14 +114,15 @@ function WatchContent() {
     [router, searchParams, episodes, directUrl]
   );
 
-  // 进度恢复优先级：URL position 参数 > IndexedDB 记录
+  // 进度恢复优先级：URL position 参数 > IndexedDB 记录（按标题存，换源也能接着看）
   const getRestorePosition = useCallback(async () => {
     const urlPos = parseInt(searchParams.get('position') || '0', 10) || 0;
     if (urlPos > 0) return urlPos;
-    if (!vodId) return 0;
-    const entry = await db.progress.get(progressKeyOf(sourceKey, vodId, currentIndex));
-    return entry?.position ?? 0;
-  }, [searchParams, sourceKey, vodId, currentIndex]);
+    const entry = await db.progress.get(progressKeyOf(videoTitle, currentIndex));
+    if (!entry || entry.duration <= 0) return 0;
+    // 已看完的集重进从头播，否则会停在片尾
+    return entry.position / entry.duration >= PROGRESS_FINISHED ? 0 : entry.position;
+  }, [searchParams, videoTitle, currentIndex]);
 
   // 写入观看历史（进入页面即记录，进度后续增量更新）
   useEffect(() => {
@@ -143,15 +145,46 @@ function WatchContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verified, sourceKey, vodId, currentIndex, videoTitle, currentUrl]);
 
-  // 播放中与暂停时的进度落盘逻辑一致，共用同一回调
+  // 每集的观看比例（集号 → 0..1），驱动剧集列表的「已看 / 45%」标记
+  const [episodeProgress, setEpisodeProgress] = useState<Record<number, number>>({});
+  const refreshEpisodeProgress = useCallback(() => {
+    listProgress(videoTitle)
+      .then((rows) => {
+        const out: Record<number, number> = {};
+        for (const [index, row] of Object.entries(rows)) {
+          if (row.duration > 0) out[Number(index)] = Math.min(1, row.position / row.duration);
+        }
+        setEpisodeProgress(out);
+      })
+      .catch(() => {});
+  }, [videoTitle]);
+
+  // 换集/换片时刷新：进度按标题存，换源后同一部剧的标记照样带过来
+  useEffect(() => {
+    refreshEpisodeProgress();
+  }, [refreshEpisodeProgress, currentIndex, episodes.length]);
+
+  // 播放中与暂停时的进度落盘逻辑一致，共用同一回调。
+  // 返回 promise：暂停时要在落盘之后再刷新列表标记，否则读到的是上一次的旧进度
   const handleProgress = useCallback(
     (position: number, duration: number) => {
-      if (vodId) {
-        saveProgress(sourceKey, vodId, currentIndex, position, duration).catch(() => {});
-        updateHistoryProgress(sourceKey, vodId || currentUrl, position, duration).catch(() => {});
+      if (!vodId) return Promise.resolve();
+      // 当前集的比例就地更新（只在整数百分比变化时 setState），
+      // 这样不依赖 pause/ended 事件——有些源播到片尾并不触发 ended
+      if (duration > 0) {
+        const ratio = Math.min(1, position / duration);
+        setEpisodeProgress((prev) =>
+          prev[currentIndex] !== undefined && Math.round(prev[currentIndex] * 100) === Math.round(ratio * 100)
+            ? prev
+            : { ...prev, [currentIndex]: ratio }
+        );
       }
+      return Promise.all([
+        saveProgress(videoTitle, currentIndex, position, duration),
+        updateHistoryProgress(sourceKey, vodId || currentUrl, position, duration),
+      ]).catch(() => {});
     },
-    [sourceKey, vodId, currentIndex, currentUrl]
+    [sourceKey, vodId, currentUrl, videoTitle, currentIndex]
   );
 
   // 自动连播的 800ms 延迟切集要在卸载时取消，避免离开页面后跳转
@@ -161,11 +194,13 @@ function WatchContent() {
   }, []);
 
   const handleEnded = useCallback(() => {
-    if (vodId) clearProgress(sourceKey, vodId, currentIndex).catch(() => {});
+    // 记成满进度而不是删掉：剧集列表要据此标「已看」，续播则按看完处理
+    if (vodId) saveProgress(videoTitle, currentIndex, 1, 1).catch(() => {});
+    setEpisodeProgress((prev) => ({ ...prev, [currentIndex]: 1 }));
     if (store.autoplayNext && currentIndex < episodes.length - 1) {
       autoNextTimer.current = setTimeout(() => goEpisode(currentIndex + 1), 800);
     }
-  }, [store.autoplayNext, currentIndex, episodes.length, goEpisode, sourceKey, vodId]);
+  }, [store.autoplayNext, currentIndex, episodes.length, goEpisode, vodId, videoTitle]);
 
   // Alt+←/→ 集数切换快捷键
   useEffect(() => {
@@ -283,7 +318,10 @@ function WatchContent() {
                   nextEpisodeKey={currentIndex + 1 < episodes.length ? `${sourceKey}:${vodId}:${currentIndex + 1}` : undefined}
                   getRestorePosition={getRestorePosition}
                   onTimeUpdate={handleProgress}
-                  onPause={handleProgress}
+                  onPause={(position, duration) => {
+                    // 落盘完成后再刷新，「看到 45%」才不会慢一拍
+                    handleProgress(position, duration).then(refreshEpisodeProgress);
+                  }}
                   onEnded={handleEnded}
                   captureRef={captureRef}
                   onQuality={(height) => {
@@ -372,6 +410,7 @@ function WatchContent() {
                     key={realIndex}
                     index={realIndex}
                     active={realIndex === currentIndex}
+                    progress={episodeProgress[realIndex]}
                     onClick={() => goEpisode(realIndex)}
                   />
                 ))}
@@ -412,21 +451,45 @@ function WatchContent() {
   );
 }
 
-/** 集数按钮：激活时自动滚动进可视区（长剧列表） */
-function EpisodeButton({ index, active, onClick }: { index: number; active: boolean; onClick: () => void }) {
+/**
+ * 集数按钮：激活时自动滚动进可视区（长剧列表）。
+ * 看过/看到一半的集数由 progress（0..1）标出来：看完换底色，看一半标百分比。
+ * progress 按片名存，换源后同一部剧的标记不变。
+ */
+function EpisodeButton({
+  index,
+  active,
+  progress,
+  onClick,
+}: {
+  index: number;
+  active: boolean;
+  progress?: number;
+  onClick: () => void;
+}) {
   const ref = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (active) ref.current?.scrollIntoView({ block: 'nearest' });
   }, [active]);
 
+  const finished = progress !== undefined && progress >= PROGRESS_FINISHED;
+  const watching = progress !== undefined && progress > 0 && !finished;
+
   return (
     <button
       ref={ref}
-      className={cn('btn btn-sm !px-1', active ? 'episode-active' : 'btn-ghost')}
+      className={cn(
+        'btn btn-sm !px-1 gap-1',
+        active ? 'episode-active' : 'btn-ghost',
+        // 非激活时：看完的换成绿色淡底，正在看的保持普通底只标百分比
+        !active && finished && 'bg-success/10 border-success/30 text-success hover:bg-success/20 hover:text-success'
+      )}
       onClick={onClick}
+      title={finished ? '已看完' : watching ? `已看 ${Math.round(progress * 100)}%` : undefined}
     >
       {index + 1}
+      {watching && <span className="text-[9px] leading-none opacity-80">{Math.round(progress * 100)}%</span>}
     </button>
   );
 }
