@@ -43,6 +43,7 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['←', '→'], label: '快退 / 快进 5 秒' },
   { keys: ['↑', '↓'], label: '音量' },
   { keys: ['F'], label: '全屏' },
+  { keys: ['S'], label: '截图' },
   { keys: ['Alt', '←', '→'], label: '切换集数' },
 ];
 
@@ -58,6 +59,8 @@ function WatchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const store = useAppStore();
+  // 播放器把截图函数挂到这里，顶部「截图」按钮调用
+  const captureRef = useRef<(() => void) | null>(null);
   const { verified } = useAuth();
 
   const sourceKey = searchParams.get('source') || '';
@@ -236,6 +239,14 @@ function WatchContent() {
             )}
             <button
               className="btn-ghost btn-sm"
+              disabled={!currentUrl}
+              onClick={() => captureRef.current?.()}
+              title="截取当前画面（S）"
+            >
+              截图
+            </button>
+            <button
+              className="btn-ghost btn-sm"
               onClick={() => {
                 if (!currentUrl) return;
                 enqueueDownload({
@@ -274,6 +285,7 @@ function WatchContent() {
                   onTimeUpdate={handleProgress}
                   onPause={handleProgress}
                   onEnded={handleEnded}
+                  captureRef={captureRef}
                   onQuality={(height) => {
                     // 播放实测是最权威的画质来源，回写后搜索列表里该「源 + 影片」直接显示
                     if (!sourceKey || !vodId) return;

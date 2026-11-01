@@ -47,6 +47,8 @@ interface PlayerShellProps {
   onQuality?: (height: number) => void;
   /** 恢复策略判源不可用（重试耗尽/格式硬失败）时回调：父级弹出换源面板 */
   onRequestSwitchSource?: (reason: string) => void;
+  /** 父级触发截图用：PlayerShell 把截图函数挂到这里，供播放器外的按钮调用 */
+  captureRef?: { current: (() => void) | null };
 }
 
 export function PlayerShell({
@@ -63,6 +65,7 @@ export function PlayerShell({
   onPause,
   onQuality,
   onRequestSwitchSource,
+  captureRef,
 }: PlayerShellProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,11 +80,11 @@ export function PlayerShell({
   // 始终持有最新 props/回调，避免重建播放器
   const propsRef = useRef({
     url, title, adFilter, autoplayNext, episodeKey, nextUrl, nextEpisodeKey,
-    getRestorePosition, onTimeUpdate, onEnded, onPause, onQuality, onRequestSwitchSource,
+    getRestorePosition, onTimeUpdate, onEnded, onPause, onQuality, onRequestSwitchSource, captureRef,
   });
   propsRef.current = {
     url, title, adFilter, autoplayNext, episodeKey, nextUrl, nextEpisodeKey,
-    getRestorePosition, onTimeUpdate, onEnded, onPause, onQuality, onRequestSwitchSource,
+    getRestorePosition, onTimeUpdate, onEnded, onPause, onQuality, onRequestSwitchSource, captureRef,
   };
 
   /** 上报实测画质：多次上报取大值由调用方决定，这里只管把拿到的高度传出去 */
@@ -114,6 +117,24 @@ export function PlayerShell({
     if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
     hintTimerRef.current = setTimeout(() => setHint(''), 2500);
   };
+
+  /**
+   * 截图当前画面：直接下载 PNG，不落库（刷新即失效）。
+   * 画布只画已解码的一帧，MSE(blob) 源同源不污染画布；跨域直链会被浏览器拦住，
+   * 此时给提示而不是静默失败。
+   */
+  const captureScreenshot = () => {
+    const art = artRef.current;
+    if (!art) return;
+    // 冒号在 Windows 文件名里非法，用横线替代
+    const name = `${propsRef.current.title || '截图'}_${formatTime(art.currentTime).replace(/:/g, '-')}`;
+    art.screenshot(name).then(
+      () => showHint('已保存截图'),
+      () => showHint('截图失败：画面受跨域限制')
+    );
+  };
+  // 父级按钮通过 ref 调用（与 propsRef 同一种「每次渲染同步最新值」的写法）
+  if (propsRef.current.captureRef) propsRef.current.captureRef.current = captureScreenshot;
 
   // 片段缓存开启时调大 hls.js 自身缓冲，缓冲之外的空窗由预取器补齐
   const buildHlsConfig = (): Partial<HlsConfig> => {
@@ -436,8 +457,10 @@ export function PlayerShell({
     // —— 键盘快捷键（旧版 hotkey:false + 自定义逻辑的移植） ——
     const shortcuts = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      // 输入框或按钮获得焦点时不劫持按键：否则空格会吞掉按钮的默认激活
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest('button')) return;
+      // 输入框里不劫持按键；按钮上只放过空格（那是按钮的原生激活键），
+      // 其余快捷键照常生效——否则点过「截图」按钮后就按不动 S 了
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      const inControl = !!target.closest?.('button');
       const current = artRef.current;
       if (!current) return;
       if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); return; } // 由父层处理集数切换
@@ -456,10 +479,14 @@ export function PlayerShell({
           if (current.volume > 0) { current.volume = Math.max(0, current.volume - 0.1); showHint(`音量 ${Math.round(current.volume * 100)}%`); e.preventDefault(); }
           break;
         case ' ':
+          if (inControl) return; // 按钮自己要用空格
           current.toggle(); showHint('播放/暂停'); e.preventDefault();
           break;
         case 'f': case 'F':
           current.fullscreen = !current.fullscreen; e.preventDefault();
+          break;
+        case 's': case 'S':
+          captureScreenshot(); e.preventDefault();
           break;
       }
     };
