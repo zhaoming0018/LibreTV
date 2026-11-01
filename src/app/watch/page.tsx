@@ -366,7 +366,7 @@ function WatchContent() {
             {/* 键位做成 kbd 小块逐行排列，比一行流水文案更好扫 */}
             <div className="hidden md:block mt-3 pt-2.5 border-t border-line">
               <p className="text-[10px] font-medium text-faint mb-1.5">键盘快捷键</p>
-              <dl className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1.5 text-[10px] text-faint">
+              <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-[10px] text-muted">
                 {SHORTCUTS.map(({ keys, label }) => (
                   <div key={label} className="contents">
                     <dt className="flex items-center gap-1">
