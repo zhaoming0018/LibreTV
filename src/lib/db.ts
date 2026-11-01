@@ -180,7 +180,7 @@ export async function clearAllHistory(): Promise<void> {
 }
 
 /** 进度达到该比例即视为「已看完」：重进不再续播，剧集列表标成已看 */
-export const PROGRESS_FINISHED = 0.95;
+export const PROGRESS_FINISHED = 0.9;
 
 /**
  * 进度主键：按「片名 + 集号」记，不掺来源。
