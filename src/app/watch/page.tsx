@@ -38,6 +38,14 @@ import { cn } from '@/lib/utils';
  * 状态全部由 URL 驱动：/watch?source=xx&id=..&index=..&title=..
  * 集数列表由服务端详情接口获取；进度与历史走 IndexedDB。
  */
+const SHORTCUTS: { keys: string[]; label: string }[] = [
+  { keys: ['空格'], label: '播放 / 暂停' },
+  { keys: ['←', '→'], label: '快退 / 快进 5 秒' },
+  { keys: ['↑', '↓'], label: '音量' },
+  { keys: ['F'], label: '全屏' },
+  { keys: ['Alt', '←', '→'], label: '切换集数' },
+];
+
 export default function WatchPage() {
   return (
     <Suspense>
@@ -355,9 +363,24 @@ function WatchContent() {
                 ))}
               </div>
             )}
-            <p className="hidden md:block text-[10px] text-faint mt-3 leading-relaxed">
-              快捷键：空格 播放/暂停 · ←/→ 快退/快进 5s · ↑/↓ 音量 · F 全屏 · Alt+←/→ 切换集数
-            </p>
+            {/* 键位做成 kbd 小块逐行排列，比一行流水文案更好扫 */}
+            <div className="hidden md:block mt-3 pt-2.5 border-t border-line">
+              <p className="text-[10px] font-medium text-faint mb-1.5">键盘快捷键</p>
+              <dl className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1.5 text-[10px] text-faint">
+                {SHORTCUTS.map(({ keys, label }) => (
+                  <div key={label} className="contents">
+                    <dt className="flex items-center gap-1">
+                      {keys.map((key) => (
+                        <kbd key={key} className="kbd">
+                          {key}
+                        </kbd>
+                      ))}
+                    </dt>
+                    <dd>{label}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </aside>
         </div>
       </main>

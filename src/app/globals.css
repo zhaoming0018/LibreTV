@@ -111,6 +111,10 @@ body {
   .chip {
     @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors;
   }
+  /* 键位标签：快捷键说明里模拟按键外观 */
+  .kbd {
+    @apply inline-flex items-center justify-center min-w-[1.4rem] h-[1.15rem] px-1 rounded border border-line bg-chip font-mono text-[10px] leading-none text-muted;
+  }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
